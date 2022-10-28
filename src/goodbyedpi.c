@@ -29,6 +29,7 @@ WINSOCK_API_LINKAGE INT WSAAPI inet_pton(INT Family, LPCSTR pStringBuf, PVOID pA
 
 #define MAX_FILTERS 4
 
+/* 로컬호스트로 향하는 패킷에 대해서는 필터링을 적용하지 않는다 */
 #define DIVERT_NO_LOCALNETSv4_DST "(" \
                    "(ip.DstAddr < 127.0.0.1 or ip.DstAddr > 127.255.255.255) and " \
                    "(ip.DstAddr < 10.0.0.0 or ip.DstAddr > 10.255.255.255) and " \
@@ -44,6 +45,7 @@ WINSOCK_API_LINKAGE INT WSAAPI inet_pton(INT Family, LPCSTR pStringBuf, PVOID pA
                    "(ip.SrcAddr < 169.254.0.0 or ip.SrcAddr > 169.254.255.255)" \
                    ")"
 
+/* IPv6 로컬호스트로 향하는 패킷에 대해서 필터링을 적용하지 않는다 */
 #define DIVERT_NO_LOCALNETSv6_DST "(" \
                    "(ipv6.DstAddr > ::1) and " \
                    "(ipv6.DstAddr < 2001::0 or ipv6.DstAddr > 2001:1::0) and " \
@@ -599,8 +601,11 @@ int main(int argc, char *argv[]) {
     SetDllDirectory("");
     SetSearchPathMode(BASE_SEARCH_PATH_ENABLE_SAFE_SEARCHMODE | BASE_SEARCH_PATH_PERMANENT);
 
+    /* 프로그램이 서비스로 실행되고있지 않으면 서비스로 실행한다.
+    서비스로 등록해야지 패킷을 캡춰할 수 있기 때문? */
     if (!running_from_service) {
         running_from_service = 1;
+        // service.c를 이용해 서비스 등록
         if (service_register(argc, argv)) {
             /* We've been called as a service. Register service
              * and exit this thread. main() would be called from
@@ -639,6 +644,7 @@ int main(int argc, char *argv[]) {
         max_payload_size = 1200;
     }
 
+    /* 옵션 파싱 */
     while ((opt = getopt_long(argc, argv, "123456prsaf:e:mwk:n", long_options, NULL)) != -1) {
         switch (opt) {
             case '1':
@@ -953,6 +959,7 @@ int main(int argc, char *argv[]) {
             auto_ttl_max = 10;
     }
 
+    // 옵션 출력
     printf("Block passive: %d\n"                    /* 1 */
            "Fragment HTTP: %u\n"                    /* 2 */
            "Fragment persistent HTTP: %u\n"         /* 3 */
@@ -995,6 +1002,7 @@ int main(int argc, char *argv[]) {
            max_payload_size /* 19 */
           );
 
+    // 옵션에 따른 경고 출력
     if (do_fragment_http && http_fragment_size > 2 && !do_native_frag) {
         puts("\nWARNING: HTTP fragmentation values > 2 are not fully compatible "
              "with other options. Please use values <= 2 or disable HTTP fragmentation "
@@ -1027,6 +1035,7 @@ int main(int argc, char *argv[]) {
      * IPv4 & IPv6 filter for inbound HTTP redirection packets and
      * active DPI circumvention
      */
+    // 초기화?
     filters[filter_num] = init(filter_string, 0);
 
     w_filter = filters[filter_num];
@@ -1040,6 +1049,7 @@ int main(int argc, char *argv[]) {
     printf("Filter activated, GoodbyeDPI is now running!\n");
     signal(SIGINT, sigint_handler);
 
+    // 윈도우 드라이버로 패킷잡기?
     while (1) {
         if (WinDivertRecv(w_filter, packet, sizeof(packet), &packetLen, &addr)) {
             debug("Got %s packet, len=%d!\n", addr.Outbound ? "outbound" : "inbound",
